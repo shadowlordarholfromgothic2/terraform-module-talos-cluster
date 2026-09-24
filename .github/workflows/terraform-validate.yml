@@ -1,0 +1,96 @@
+name: Validate
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A newer push to the same ref makes the in-flight run irrelevant.
+concurrency:
+  group: validate-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TF_IN_AUTOMATION: "1"
+
+jobs:
+  fmt:
+    name: fmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: latest
+          terraform_wrapper: false
+
+      - name: terraform fmt
+        run: terraform fmt -check -recursive -diff
+
+  validate:
+    name: terraform ${{ matrix.terraform }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The floor declared by required_version, and whatever is current. If
+        # the floor breaks, versions.tf is lying to consumers.
+        terraform: ["1.9.0", "latest"]
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ matrix.terraform }}
+          terraform_wrapper: false
+
+      # -backend=false: this is a child module with no state of its own, and CI
+      # holds no Proxmox credentials. init only needs to fetch the providers so
+      # that validate can type-check resource schemas.
+      - name: terraform init
+        run: terraform init -backend=false -input=false -no-color
+
+      - name: terraform validate
+        run: terraform validate -no-color
+
+  opentofu:
+    name: opentofu
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: latest
+          tofu_wrapper: false
+
+      - name: tofu init
+        run: tofu init -backend=false -input=false -no-color
+
+      - name: tofu validate
+        run: tofu validate -no-color
+
+  tflint:
+    name: tflint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: latest
+
+      - name: tflint --init
+        run: tflint --init
+        env:
+          # Only consumed when .tflint.hcl grows a non-bundled plugin; keeps the
+          # plugin download off the anonymous API rate limit.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: tflint
+        run: tflint -f compact --recursive
