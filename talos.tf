@@ -25,6 +25,9 @@ data "talos_machine_configuration" "node" {
       prefix        = var.network.prefix
       gateway       = var.network.gateway
       nameservers   = var.network.nameservers
+      # Workloads belong on workers, except in a cluster that has none: a
+      # control-plane-only inventory would otherwise have nowhere to schedule.
+      allow_scheduling_on_control_planes = length(local.workers) == 0
     }),
     yamlencode({
       apiVersion = "v1alpha1"
