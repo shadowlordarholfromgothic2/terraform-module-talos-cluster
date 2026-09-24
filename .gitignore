@@ -1,0 +1,28 @@
+# Provider plugins and init artifacts
+.terraform/
+
+# This is a reusable child module, not a root module: the dependency lock
+# belongs to the configuration that calls it, which pins its own providers.
+.terraform.lock.hcl
+
+# State never belongs here — the module holds none of its own
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+
+# Plans can embed rendered machine configuration and cluster secrets
+*.tfplan
+*.tfplan.*
+
+# Variable files routinely carry Proxmox API tokens
+*.tfvars
+*.tfvars.json
+
+# CLI configuration may contain credentials
+.terraformrc
+terraform.rc
+
+# Retrieved cluster credentials
+talosconfig
+kubeconfig
