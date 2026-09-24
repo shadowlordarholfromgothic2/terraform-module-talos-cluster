@@ -1,0 +1,35 @@
+machine:
+  install:
+    disk: /dev/sda
+    image: ghcr.io/siderolabs/installer:${talos_version}
+    wipe: false
+  network:
+    interfaces:
+      - deviceSelector:
+          hardwareAddr: "${mac}"
+        dhcp: false
+        addresses:
+          - "${ip}/${prefix}"
+        routes:
+          - network: 0.0.0.0/0
+            gateway: "${gateway}"
+%{ if controlplane ~}
+        vip:
+          ip: "${api_vip}"
+%{ endif ~}
+    nameservers:
+%{ for nameserver in nameservers ~}
+      - "${nameserver}"
+%{ endfor ~}
+cluster:
+  network:
+    podSubnets:
+      - 10.244.0.0/16
+    serviceSubnets:
+      - 10.96.0.0/12
+%{ if controlplane ~}
+  apiServer:
+    certSANs:
+      - "${api_vip}"
+  allowSchedulingOnControlPlanes: false
+%{ endif ~}
