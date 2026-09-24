@@ -74,7 +74,7 @@ variable "api_vip" {
   }
   validation {
     condition     = !contains([for n in var.nodes : n.ip], var.api_vip)
-    error_message = "The Kubernetes VIP must differ from all six node IPs."
+    error_message = "The Kubernetes VIP must differ from every node IP."
   }
 }
 
@@ -93,7 +93,7 @@ variable "kubernetes_version" {
 }
 
 variable "nodes" {
-  description = "Exactly three control planes and three workers. IPs become the nodes' static addresses and must match the DHCP reservations used for maintenance-mode boots. Omitting `datastore` places the node's disk on var.vm_datastore. `tags` adds Proxmox tags beyond the managed ones, `labels` adds Kubernetes labels to the node object."
+  description = "The cluster inventory, keyed by hostname: one VM per entry, however many you list. At least one `controlplane` is required; workers are optional. IPs become the nodes' static addresses and must match the DHCP reservations used for maintenance-mode boots. Omitting `datastore` places the node's disk on var.vm_datastore. `tags` adds Proxmox tags beyond the managed ones, `labels` adds Kubernetes labels to the node object."
   type = map(object({
     role      = string
     id        = number
@@ -105,12 +105,17 @@ variable "nodes" {
   }))
 
   validation {
-    condition = (
-      length(var.nodes) == 6 &&
-      length([for n in var.nodes : n if n.role == "controlplane"]) == 3 &&
-      length([for n in var.nodes : n if n.role == "worker"]) == 3
-    )
-    error_message = "Provide exactly three controlplane and three worker nodes."
+    # The role also selects the sizing defaults and the startup order, so an
+    # unknown one has to fail here rather than deep inside a resource.
+    condition     = alltrue([for n in var.nodes : contains(["controlplane", "worker"], n.role)])
+    error_message = "Each node's role must be either controlplane or worker."
+  }
+  validation {
+    # One control plane is enough for a single-node cluster; etcd only gains
+    # fault tolerance at odd counts of three or more. Workers are optional, and
+    # a cluster without any schedules workloads on its control planes instead.
+    condition     = length([for n in var.nodes : n if n.role == "controlplane"]) >= 1
+    error_message = "Provide at least one controlplane node."
   }
   validation {
     condition = alltrue([
@@ -202,10 +207,10 @@ variable "vm_boot_delay" {
 }
 
 variable "sizing" {
-  description = "Per-VM allocations. Memory is MiB, disk is GiB. `controlplane` and `worker` are the defaults every node of that role gets; `nodes` overrides individual fields for one named node, and any field left out there falls back to the role default."
+  description = "Per-VM allocations. Memory is MiB, disk is GiB. `controlplane` and `worker` are the defaults every node of that role gets; `worker` may be omitted when the inventory holds no workers. `nodes` overrides individual fields for one named node, and any field left out there falls back to the role default."
   type = object({
     controlplane = object({ cores = number, memory = number, disk = number })
-    worker       = object({ cores = number, memory = number, disk = number })
+    worker       = optional(object({ cores = number, memory = number, disk = number }))
     nodes = optional(map(object({
       cores  = optional(number)
       memory = optional(number)
@@ -215,11 +220,17 @@ variable "sizing" {
   validation {
     condition = alltrue([
       for s in [var.sizing.controlplane, var.sizing.worker] :
-      s.cores >= 2 && floor(s.cores) == s.cores &&
-      s.memory >= 2048 && floor(s.memory) == s.memory &&
-      s.disk >= 32 && floor(s.disk) == s.disk
+      s == null ? true : (
+        s.cores >= 2 && floor(s.cores) == s.cores &&
+        s.memory >= 2048 && floor(s.memory) == s.memory &&
+        s.disk >= 32 && floor(s.disk) == s.disk
+      )
     ])
     error_message = "Use integer allocations of at least 2 vCPU, 2048 MiB RAM and 32 GiB disk."
+  }
+  validation {
+    condition     = var.sizing.worker != null || length([for n in var.nodes : n if n.role == "worker"]) == 0
+    error_message = "sizing.worker is required whenever nodes contains worker entries."
   }
   validation {
     condition = alltrue([

@@ -31,5 +31,5 @@ cluster:
   apiServer:
     certSANs:
       - "${api_vip}"
-  allowSchedulingOnControlPlanes: false
+  allowSchedulingOnControlPlanes: ${allow_scheduling_on_control_planes}
 %{ endif ~}

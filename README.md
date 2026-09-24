@@ -1,13 +1,15 @@
 # talos-cluster
 
-Provisions a six-node [Talos Linux](https://www.talos.dev/) Kubernetes cluster on a
-single Proxmox VE node: it downloads the Talos ISO, creates the VMs, generates and
-applies the machine configuration, performs the one-time etcd bootstrap, waits for
-the cluster to report healthy, and returns a `talosconfig` and `kubeconfig`.
+Provisions a [Talos Linux](https://www.talos.dev/) Kubernetes cluster on a single
+Proxmox VE node: it downloads the Talos ISO, creates the VMs, generates and applies
+the machine configuration, performs the one-time etcd bootstrap, waits for the
+cluster to report healthy, and returns a `talosconfig` and `kubeconfig`.
 
-The module is deliberately opinionated — three control planes and three workers, a
-shared API VIP, static addressing configured by Talos — so that a lab cluster comes
-up from an empty Proxmox node with one `apply`.
+The cluster is exactly as large as the `nodes` map: one VM per entry, from a
+single-node lab to as many control planes and workers as the Proxmox node will
+hold. The module stays opinionated about everything else — a shared API VIP,
+static addressing configured by Talos, one pinned Talos release — so that a
+cluster comes up from an empty Proxmox node with one `apply`.
 
 ## What it does
 
@@ -48,6 +50,9 @@ from the root module, which is where credentials belong.
   the DHCP pool.
 
 ## Usage
+
+Six nodes below are only an example; add or remove entries to change the size of
+the cluster.
 
 ```hcl
 module "talos_cluster" {
@@ -128,7 +133,7 @@ so neither duplicates the other.
 | `api_vip` | Control-plane VIP for the Kubernetes API. Must be free, outside the DHCP pool, and not equal to any node IP. | `string` | n/a |
 | `talos_version` | Talos release to install, e.g. `v1.13.1`. Constrained to `v1.13.x`. | `string` | n/a |
 | `kubernetes_version` | Initial Kubernetes version, without the `v`. | `string` | n/a |
-| `nodes` | The cluster inventory. See [below](#nodes). | `map(object)` | n/a |
+| `nodes` | The cluster inventory; one VM per entry, at least one of them a control plane. See [below](#nodes). | `map(object)` | n/a |
 | `bootstrap_node` | Name of the control plane that runs the one-time etcd bootstrap. `null` selects the alphabetically first one. | `string` | `null` |
 | `vm_boot_delay` | Go duration to wait after the VMs start before the first configuration attempt, e.g. `90s`. | `string` | n/a |
 | `sizing` | Per-VM allocations. See [below](#sizing). | `object` | n/a |
@@ -150,8 +155,18 @@ map(object({
 The map key becomes the VM name and the Kubernetes node hostname, so it must be a
 valid DNS label.
 
-Validation enforces exactly **three `controlplane` and three `worker`** entries,
-and that VM IDs, IP addresses and MAC addresses are each unique across the map.
+Every entry becomes one VM, so the map alone decides how big the cluster is.
+Validation asks only for **at least one `controlplane`** entry, that every `role`
+is `controlplane` or `worker`, and that VM IDs, IP addresses and MAC addresses are
+each unique across the map. Two shapes worth knowing about:
+
+- **Control-plane count.** etcd tolerates failures only at odd counts: one node
+  for a lab, three to survive one loss, five to survive two. An even count adds a
+  member without adding fault tolerance.
+- **No workers at all.** A control-plane-only inventory is allowed, and gets
+  `allowSchedulingOnControlPlanes: true` so that it has somewhere to run
+  workloads. Adding the first worker flips that back to `false` on the next apply
+  and moves the workloads off the control planes.
 
 `labels` are rejected if they use the reserved `kubernetes.io` / `k8s.io`
 namespaces, because Talos writes them with the node's own kubelet identity and the
@@ -166,7 +181,7 @@ topology/instance-type keys are allowed.
 ```hcl
 object({
   controlplane = object({ cores = number, memory = number, disk = number })
-  worker       = object({ cores = number, memory = number, disk = number })
+  worker       = optional(object({ cores = number, memory = number, disk = number }))
   nodes = optional(map(object({
     cores  = optional(number)
     memory = optional(number)
@@ -179,6 +194,9 @@ Memory is MiB, disk is GiB. `controlplane` and `worker` are the defaults for eve
 node of that role; `nodes` overrides individual fields for one named node, and any
 field left out there falls back to the role default. Keys in `sizing.nodes` must
 name entries in `nodes`.
+
+`worker` may be omitted for a control-plane-only cluster, and is required as soon
+as `nodes` contains a worker.
 
 Minimums, for role defaults and per-node overrides alike: 2 vCPU, 2048 MiB RAM,
 32 GiB disk, all integers.
@@ -200,11 +218,11 @@ state and restricts access.
 | Address | Purpose |
 | --- | --- |
 | `proxmox_download_file.talos` | The Talos ISO, named `<cluster_name>-talos-<version>-amd64.iso`. |
-| `proxmox_virtual_environment_vm.node` (×6) | The node VMs. |
+| `proxmox_virtual_environment_vm.node` (one per `nodes` entry) | The node VMs. |
 | `talos_machine_secrets.cluster` | Cluster PKI and bootstrap tokens. |
-| `data.talos_machine_configuration.node` (×6) | Rendered machine configs. |
+| `data.talos_machine_configuration.node` (one per node) | Rendered machine configs. |
 | `time_sleep.maintenance_mode` | Boot gate before the first config attempt. |
-| `talos_machine_configuration_apply.node` (×6) | Applies each config over TCP 50000. |
+| `talos_machine_configuration_apply.node` (one per node) | Applies each config over TCP 50000. |
 | `talos_machine_bootstrap.cluster` | One-time etcd bootstrap. |
 | `data.talos_cluster_health.cluster` | Blocks until the cluster is ready. |
 | `data.talos_client_configuration.cluster` | Source of the `talosconfig` output. |
@@ -218,7 +236,9 @@ Things this module fixes rather than exposing as variables:
   Talos CNI.
 - **Install disk `/dev/sda`** with `wipe: false`, matching the single virtio-SCSI
   disk attached to each VM.
-- **`allowSchedulingOnControlPlanes: false`** — workloads land on workers only.
+- **`allowSchedulingOnControlPlanes`** is derived, not exposed: `false` whenever
+  the inventory has workers, so workloads land on workers only, and `true` for a
+  control-plane-only cluster, which would otherwise have nowhere to schedule.
 - **SeaBIOS**, `virtio-scsi-single`, boot order `scsi0` then `ide2`, `l26` guest
   type, host CPU type, `discard`/`iothread`/`ssd` on the disk.
 - **QEMU guest agent disabled**, because the stock Talos ISO ships without the
@@ -241,6 +261,14 @@ Things this module fixes rather than exposing as variables:
 - **Recreating a VM recreates its configuration.** Each
   `talos_machine_configuration_apply` has `replace_triggered_by` on its VM, so a
   replaced VM boots the ISO and gets configured again.
+- **Scaling up is an apply; scaling down is not.** Adding an entry to `nodes`
+  creates that VM, configures it and waits for the enlarged cluster to report
+  healthy — it needs a DHCP reservation first, like any other node. Removing an
+  entry only destroys the VM: Kubernetes keeps the stale node object, and a
+  removed control plane stays an etcd member and costs the cluster quorum. Take
+  the node out of the cluster first (`kubectl drain`, then `talosctl -n <ip>
+  reset --graceful` so etcd loses the member cleanly, then `kubectl delete
+  node`), and only then remove it from the map.
 - **`vm_boot_delay` only costs you once.** The `time_sleep` gate re-triggers only
   when the node inventory (names → VM IDs) changes, not on every apply.
 - **`kubernetes_version` is not an upgrade path.** It seeds the initial control
