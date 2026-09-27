@@ -20,12 +20,6 @@ rule "terraform_standard_module_structure" {
   enabled = false
 }
 
-# Bundled ruleset — no version/source needed
-plugin "terraform" {
-  enabled = true
-  preset  = "recommended"
-}
-
 plugin "aws" {
   enabled = true
   version = "0.48.0"
