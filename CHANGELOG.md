@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.0](https://github.com/shadowlordarholfromgothic2/terraform-module-talos-cluster/compare/v0.1.0...v0.2.0) (2026-09-28)
+
+
+### Features
+
+* **config:** add per vm specification to defain the host for each one ([a9d4987](https://github.com/shadowlordarholfromgothic2/terraform-module-talos-cluster/commit/a9d4987b675c54d473409c18132ae22cc8dc5cb2))
+* **config:** add per vm specification to defain the host for each one ([102c153](https://github.com/shadowlordarholfromgothic2/terraform-module-talos-cluster/commit/102c153bfbcc1df725fb66c71eff76ea3e245aec))
+
 ## 0.1.0 (2026-09-24)
 
 
