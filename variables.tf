@@ -3,7 +3,7 @@
 # the validation, so neither is duplicated across the two.
 
 variable "proxmox_node" {
-  description = "Existing Proxmox node that hosts every VM in this cluster."
+  description = "Existing Proxmox node that hosts every VM in this cluster, except those that name a `proxmox_node` of their own."
   type        = string
 }
 
@@ -93,15 +93,16 @@ variable "kubernetes_version" {
 }
 
 variable "nodes" {
-  description = "The cluster inventory, keyed by hostname: one VM per entry, however many you list. At least one `controlplane` is required; workers are optional. IPs become the nodes' static addresses and must match the DHCP reservations used for maintenance-mode boots. Omitting `datastore` places the node's disk on var.vm_datastore. `tags` adds Proxmox tags beyond the managed ones, `labels` adds Kubernetes labels to the node object."
+  description = "The cluster inventory, keyed by hostname: one VM per entry, however many you list. At least one `controlplane` is required; workers are optional. IPs become the nodes' static addresses and must match the DHCP reservations used for maintenance-mode boots. Omitting `proxmox_node` places the VM on var.proxmox_node, and omitting `datastore` places its disk on var.vm_datastore. `tags` adds Proxmox tags beyond the managed ones, `labels` adds Kubernetes labels to the node object."
   type = map(object({
-    role      = string
-    id        = number
-    ip        = string
-    mac       = string
-    datastore = optional(string)
-    tags      = optional(list(string), [])
-    labels    = optional(map(string), {})
+    role         = string
+    id           = number
+    ip           = string
+    mac          = string
+    proxmox_node = optional(string)
+    datastore    = optional(string)
+    tags         = optional(list(string), [])
+    labels       = optional(map(string), {})
   }))
 
   validation {
@@ -132,6 +133,12 @@ variable "nodes" {
       for n in var.nodes : n.datastore == null ? true : trimspace(n.datastore) == n.datastore && n.datastore != ""
     ])
     error_message = "A node's optional datastore must be a non-empty Proxmox datastore ID without surrounding whitespace."
+  }
+  validation {
+    condition = alltrue([
+      for n in var.nodes : n.proxmox_node == null ? true : trimspace(n.proxmox_node) == n.proxmox_node && n.proxmox_node != ""
+    ])
+    error_message = "A node's optional proxmox_node must be a non-empty Proxmox node name without surrounding whitespace. Both iso_datastore and the node's datastore have to exist on it."
   }
   validation {
     condition = alltrue(flatten([
