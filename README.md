@@ -123,7 +123,7 @@ so neither duplicates the other.
 
 | Name | Description | Type | Default |
 | --- | --- | --- | --- |
-| `proxmox_node` | Existing Proxmox node that hosts every VM. | `string` | n/a |
+| `proxmox_node` | Existing Proxmox node that hosts every VM, except those that name a `proxmox_node` of their own. | `string` | n/a |
 | `vm_datastore` | Default datastore for VM disks; a node may override it. | `string` | n/a |
 | `iso_datastore` | Datastore that accepts ISO images. | `string` | n/a |
 | `bridge` | Existing network bridge, e.g. `vmbr0`. | `string` | n/a |
@@ -142,13 +142,14 @@ so neither duplicates the other.
 
 ```hcl
 map(object({
-  role      = string                  # "controlplane" or "worker"
-  id        = number                  # Proxmox VM ID, >= 100, unused
-  ip        = string                  # static IPv4 inside network.prefix
-  mac       = string                  # unicast MAC, matching the DHCP reservation
-  datastore = optional(string)        # overrides vm_datastore for this node's disk
-  tags      = optional(list(string), [])  # extra Proxmox tags
-  labels    = optional(map(string), {})   # extra Kubernetes node labels
+  role         = string               # "controlplane" or "worker"
+  id           = number               # Proxmox VM ID, >= 100, unused
+  ip           = string               # static IPv4 inside network.prefix
+  mac          = string               # unicast MAC, matching the DHCP reservation
+  proxmox_node = optional(string)     # overrides proxmox_node for this VM
+  datastore    = optional(string)     # overrides vm_datastore for this node's disk
+  tags         = optional(list(string), [])  # extra Proxmox tags
+  labels       = optional(map(string), {})   # extra Kubernetes node labels
 }))
 ```
 
@@ -167,6 +168,17 @@ each unique across the map. Two shapes worth knowing about:
   `allowSchedulingOnControlPlanes: true` so that it has somewhere to run
   workloads. Adding the first worker flips that back to `false` on the next apply
   and moves the workloads off the control planes.
+
+**Placement.** A node with its own `proxmox_node` is created on that host instead
+of the cluster default. VM IDs are cluster-wide in Proxmox, so they stay unique
+across hosts, and `iso_datastore` plus whatever `datastore` the node uses have to
+exist on each host you name. The installer ISO is downloaded once per host in use,
+because on a stock install `iso_datastore` is local storage.
+
+Moving an existing node to another host **replaces the VM**: the provider is not
+asked to live-migrate, and the replacement wipes the disk. For a control plane
+that means losing its etcd member, so remove it from the cluster and rejoin it
+deliberately rather than letting one apply do it in passing.
 
 `labels` are rejected if they use the reserved `kubernetes.io` / `k8s.io`
 namespaces, because Talos writes them with the node's own kubelet identity and the

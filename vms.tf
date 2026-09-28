@@ -18,6 +18,22 @@ locals {
     }
   }
 
+  # Where each VM lands. A node without a proxmox_node of its own goes to the
+  # cluster default.
+  vm_node_names = {
+    for name, node in var.nodes : name => coalesce(node.proxmox_node, var.proxmox_node)
+  }
+
+  # The ISO has to exist on every node that boots a VM from it, because
+  # iso_datastore is local storage on a stock Proxmox install. The download on
+  # var.proxmox_node is a resource of its own rather than one more instance of
+  # a for_each, so that a cluster that stays on one node keeps its state
+  # address and needs no moved block.
+  extra_iso_node_names = toset([
+    for node in var.nodes : node.proxmox_node
+    if node.proxmox_node != null && node.proxmox_node != var.proxmox_node
+  ])
+
   # Proxmox stores tags lowercased and hands them back sorted, so normalize the
   # managed tags together with the per-node ones to keep plans empty.
   vm_tags = {
@@ -38,10 +54,24 @@ resource "proxmox_download_file" "talos" {
   overwrite_unmanaged = false
 }
 
+# Same file on another node: identical name and URL, so every VM's cdrom takes
+# the same volume ID whichever node it boots on.
+resource "proxmox_download_file" "talos_elsewhere" {
+  for_each = local.extra_iso_node_names
+
+  node_name           = each.value
+  datastore_id        = var.iso_datastore
+  content_type        = "iso"
+  file_name           = "${var.cluster_name}-talos-${var.talos_version}-amd64.iso"
+  url                 = "https://github.com/siderolabs/talos/releases/download/${var.talos_version}/metal-amd64.iso"
+  overwrite           = false
+  overwrite_unmanaged = false
+}
+
 resource "proxmox_virtual_environment_vm" "node" {
   for_each = var.nodes
 
-  node_name           = var.proxmox_node
+  node_name           = local.vm_node_names[each.key]
   vm_id               = each.value.id
   name                = each.key
   description         = "Talos ${each.value.role}; managed by OpenTofu"
@@ -76,7 +106,13 @@ resource "proxmox_virtual_environment_vm" "node" {
     ssd          = true
   }
   cdrom {
-    file_id   = proxmox_download_file.talos.id
+    # Referenced through the download on this VM's own node, so the file is
+    # there before the VM boots. Both resources produce the same volume ID.
+    file_id = (
+      local.vm_node_names[each.key] == var.proxmox_node
+      ? proxmox_download_file.talos.id
+      : proxmox_download_file.talos_elsewhere[local.vm_node_names[each.key]].id
+    )
     interface = "ide2"
   }
   network_device {
