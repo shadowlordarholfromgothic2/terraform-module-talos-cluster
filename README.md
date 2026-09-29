@@ -255,7 +255,7 @@ Things this module fixes rather than exposing as variables:
   type, host CPU type, `discard`/`iothread`/`ssd` on the disk.
 - **QEMU guest agent disabled**, because the stock Talos ISO ships without the
   agent extension.
-- **Proxmox tags** `opentofu`, `talos` and the node's role are always applied,
+- **Proxmox tags** `terraform`, `talos` and the node's role are always applied,
   lowercased and sorted alongside your `tags` so that repeat plans stay empty.
 - **Startup order**: control planes `1`, workers `2`, with a 10 s up delay and a
   30 s shutdown delay, and `on_boot = true`.
