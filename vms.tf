@@ -39,7 +39,7 @@ locals {
   vm_tags = {
     for name, node in var.nodes :
     name => sort(distinct([
-      for tag in concat(["opentofu", "talos", node.role], node.tags) : lower(tag)
+      for tag in concat(["terraform", "talos", node.role], node.tags) : lower(tag)
     ]))
   }
 }
