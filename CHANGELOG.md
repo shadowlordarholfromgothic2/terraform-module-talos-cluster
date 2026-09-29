@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.0](https://github.com/shadowlordarholfromgothic2/terraform-module-talos-cluster/compare/v0.2.0...v0.3.0) (2026-09-29)
+
+
+### Features
+
+* **config:** change persistent tags ([c058912](https://github.com/shadowlordarholfromgothic2/terraform-module-talos-cluster/commit/c05891263333e77d1c6d2418655cfa8042846c75))
+* **config:** change persistent tags ([9f7d335](https://github.com/shadowlordarholfromgothic2/terraform-module-talos-cluster/commit/9f7d335db1d742d70c8994f931a2365443c4a834))
+
 ## [0.2.0](https://github.com/shadowlordarholfromgothic2/terraform-module-talos-cluster/compare/v0.1.0...v0.2.0) (2026-09-28)
 
 
