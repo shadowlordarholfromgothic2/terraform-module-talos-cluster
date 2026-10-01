@@ -23,10 +23,18 @@ machine:
 %{ endfor ~}
 cluster:
   network:
+%{ if cni == "none" ~}
+    cni:
+      name: none
+%{ endif ~}
     podSubnets:
       - 10.244.0.0/16
     serviceSubnets:
       - 10.96.0.0/12
+%{ if !kube_proxy ~}
+  proxy:
+    disabled: true
+%{ endif ~}
 %{ if controlplane ~}
   apiServer:
     certSANs:

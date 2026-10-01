@@ -20,7 +20,9 @@ cluster comes up from an empty Proxmox node with one `apply`.
    control-plane VIP, optional node labels) and applies it.
 5. Bootstraps etcd on a single control plane (`bootstrap_node`).
 6. Blocks on `talos_cluster_health` until every node is ready, then fetches the
-   kubeconfig.
+   kubeconfig. With `cni = "none"` it waits for Talos-level health only, because
+   the nodes stay `NotReady` until you install a CNI (see
+   [Bringing your own CNI](#bringing-your-own-cni)).
 
 ## Requirements
 
@@ -117,9 +119,10 @@ $ tofu output -raw kubeconfig  > ~/.kube/config
 
 ## Inputs
 
-Only `vlan_id` and `bootstrap_node` have defaults. Everything else is required by
-design: the module owns validation, the root module owns the user-facing defaults,
-so neither duplicates the other.
+Only `vlan_id`, `bootstrap_node`, `cni` and `kube_proxy` have defaults; the last
+two default to what Talos does on its own. Everything else is required by design:
+the module owns validation, the root module owns the user-facing defaults, so
+neither duplicates the other.
 
 | Name | Description | Type | Default |
 | --- | --- | --- | --- |
@@ -133,6 +136,8 @@ so neither duplicates the other.
 | `api_vip` | Control-plane VIP for the Kubernetes API. Must be free, outside the DHCP pool, and not equal to any node IP. | `string` | n/a |
 | `talos_version` | Talos release to install, e.g. `v1.13.1`. Constrained to `v1.13.x`. | `string` | n/a |
 | `kubernetes_version` | Initial Kubernetes version, without the `v`. | `string` | n/a |
+| `cni` | `flannel` lets Talos deploy Flannel; `none` leaves the cluster ready for a CNI you install afterwards. | `string` | `"flannel"` |
+| `kube_proxy` | Deploy kube-proxy. `false` is only allowed with `cni = "none"`, for a CNI that replaces it. | `bool` | `true` |
 | `nodes` | The cluster inventory; one VM per entry, at least one of them a control plane. See [below](#nodes). | `map(object)` | n/a |
 | `bootstrap_node` | Name of the control plane that runs the one-time etcd bootstrap. `null` selects the alphabetically first one. | `string` | `null` |
 | `vm_boot_delay` | Go duration to wait after the VMs start before the first configuration attempt, e.g. `90s`. | `string` | n/a |
@@ -244,8 +249,9 @@ state and restricts access.
 
 Things this module fixes rather than exposing as variables:
 
-- **Pod subnet `10.244.0.0/16`, service subnet `10.96.0.0/12`**, and the default
-  Talos CNI.
+- **Pod subnet `10.244.0.0/16`, service subnet `10.96.0.0/12`.** A CNI you
+  install yourself must use the same pod CIDR (or take it from the node objects,
+  as Cilium's `ipam.mode=kubernetes` does).
 - **Install disk `/dev/sda`** with `wipe: false`, matching the single virtio-SCSI
   disk attached to each VM.
 - **`allowSchedulingOnControlPlanes`** is derived, not exposed: `false` whenever
@@ -261,6 +267,51 @@ Things this module fixes rather than exposing as variables:
   30 s shutdown delay, and `on_boot = true`.
 - **20-minute timeouts** on config apply, bootstrap, health check and kubeconfig
   retrieval.
+
+## Bringing your own CNI
+
+`cni = "none"` builds a cluster without Flannel; add `kube_proxy = false` when the
+CNI replaces kube-proxy as well. The module does not install the CNI — do that
+from the root module or your GitOps tooling once the apply has finished:
+
+```hcl
+module "talos_cluster" {
+  # ...
+  cni        = "none"
+  kube_proxy = false
+}
+```
+
+Until a CNI is running, every node is `NotReady` and only host-network pods
+(the control-plane static pods) are scheduled, so the health check skips its
+Kubernetes checks in this mode; the kubeconfig is still returned.
+
+For Cilium on Talos, the values that matter are:
+
+```yaml
+ipam:
+  mode: kubernetes
+kubeProxyReplacement: true          # with kube_proxy = false
+k8sServiceHost: localhost           # KubePrism, on by default in Talos;
+k8sServicePort: 7445                # reaches the API without kube-proxy
+cgroup:
+  autoMount:
+    enabled: false
+  hostRoot: /sys/fs/cgroup
+securityContext:
+  capabilities:
+    ciliumAgent: [CHOWN, KILL, NET_ADMIN, NET_RAW, IPC_LOCK, SYS_ADMIN, SYS_RESOURCE, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
+    cleanCiliumState: [NET_ADMIN, SYS_ADMIN, SYS_RESOURCE]
+gatewayAPI:
+  enabled: true                     # install the Gateway API CRDs first
+```
+
+Cilium's operator checks for the Gateway API CRDs only at startup, so apply them
+before Cilium (or restart the operator afterwards).
+
+Switching an existing cluster between `flannel` and `none` changes the machine
+configuration but does not remove the Flannel or kube-proxy resources already
+running in it; treat it as a rebuild.
 
 ## Lifecycle notes
 
@@ -305,4 +356,4 @@ Things this module fixes rather than exposing as variables:
 | [talos.tf](talos.tf) | Machine secrets, config generation and apply, bootstrap, health, kubeconfig. |
 | [outputs.tf](outputs.tf) | Inventory, endpoint and credentials. |
 | [versions.tf](versions.tf) | Terraform and provider constraints. |
-| [templates/machine.yaml.tftpl](templates/machine.yaml.tftpl) | The machine-config patch: install disk, interface, VIP, nameservers, subnets. |
+| [templates/machine.yaml.tftpl](templates/machine.yaml.tftpl) | The machine-config patch: install disk, interface, VIP, nameservers, subnets, CNI and kube-proxy. |
