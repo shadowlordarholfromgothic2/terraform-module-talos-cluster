@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.0](https://github.com/shadowlordarholfromgothic2/terraform-module-talos-cluster/compare/v0.4.0...v0.5.0) (2026-10-01)
+
+
+### Features
+
+* **variables:** restrict resources allocation values ([8d21761](https://github.com/shadowlordarholfromgothic2/terraform-module-talos-cluster/commit/8d21761072fdc88683a281f255c00420afb38f29))
+* **variables:** restrict resources allocation values ([e43144a](https://github.com/shadowlordarholfromgothic2/terraform-module-talos-cluster/commit/e43144a9cedd169be30c1c562ec999eaa02a9039))
+
 ## [0.4.0](https://github.com/shadowlordarholfromgothic2/terraform-module-talos-cluster/compare/v0.3.0...v0.4.0) (2026-10-01)
 
 
