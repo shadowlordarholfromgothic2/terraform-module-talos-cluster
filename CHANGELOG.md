@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.0](https://github.com/shadowlordarholfromgothic2/terraform-module-talos-cluster/compare/v0.3.0...v0.4.0) (2026-10-01)
+
+
+### Features
+
+* **cni:** add no-cni mode for cilium installation ready cluster ([d7b5d92](https://github.com/shadowlordarholfromgothic2/terraform-module-talos-cluster/commit/d7b5d92d611f46adecb910810688bf46acbedbfd))
+* **cni:** add no-cni mode for cilium installation ready cluster ([71b83b9](https://github.com/shadowlordarholfromgothic2/terraform-module-talos-cluster/commit/71b83b940f28209f957db1a0a304f484d2a1c86e))
+
 ## [0.3.0](https://github.com/shadowlordarholfromgothic2/terraform-module-talos-cluster/compare/v0.2.0...v0.3.0) (2026-09-29)
 
 
