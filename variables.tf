@@ -251,11 +251,11 @@ variable "sizing" {
       for s in [var.sizing.controlplane, var.sizing.worker] :
       s == null ? true : (
         s.cores >= 2 && floor(s.cores) == s.cores &&
-        s.memory >= 2048 && floor(s.memory) == s.memory &&
+        s.memory >= 4096 && floor(s.memory) == s.memory &&
         s.disk >= 32 && floor(s.disk) == s.disk
       )
     ])
-    error_message = "Use integer allocations of at least 2 vCPU, 2048 MiB RAM and 32 GiB disk."
+    error_message = "Use integer allocations of at least 2 vCPU, 4096 MiB RAM and 32 GiB disk."
   }
   validation {
     condition     = var.sizing.worker != null || length([for n in var.nodes : n if n.role == "worker"]) == 0
@@ -265,7 +265,7 @@ variable "sizing" {
     condition = alltrue([
       for s in values(var.sizing.nodes) :
       (s.cores == null ? true : s.cores >= 2 && floor(s.cores) == s.cores) &&
-      (s.memory == null ? true : s.memory >= 2048 && floor(s.memory) == s.memory) &&
+      (s.memory == null ? true : s.memory >= 4096 && floor(s.memory) == s.memory) &&
       (s.disk == null ? true : s.disk >= 32 && floor(s.disk) == s.disk)
     ])
     error_message = "Per-node overrides in sizing.nodes must also use integer allocations of at least 2 vCPU, 2048 MiB RAM and 32 GiB disk."

@@ -215,7 +215,7 @@ name entries in `nodes`.
 `worker` may be omitted for a control-plane-only cluster, and is required as soon
 as `nodes` contains a worker.
 
-Minimums, for role defaults and per-node overrides alike: 2 vCPU, 2048 MiB RAM,
+Minimums, for role defaults and per-node overrides alike: 2 vCPU, 4096 MiB RAM,
 32 GiB disk, all integers.
 
 ## Outputs
