@@ -92,6 +92,28 @@ variable "kubernetes_version" {
   type        = string
 }
 
+# The two CNI inputs default to Talos's own behaviour, so a cluster that sets
+# neither renders the same machine configuration it always has.
+variable "cni" {
+  description = "Cluster CNI. `flannel` lets Talos deploy Flannel; `none` leaves the cluster CNI-ready for one you install afterwards (e.g. Cilium), with nodes NotReady until you do."
+  type        = string
+  default     = "flannel"
+  validation {
+    condition     = contains(["flannel", "none"], var.cni)
+    error_message = "cni must be \"flannel\" or \"none\"."
+  }
+}
+
+variable "kube_proxy" {
+  description = "Deploy kube-proxy. Disable only when the CNI you install replaces it (Cilium's kubeProxyReplacement)."
+  type        = bool
+  default     = true
+  validation {
+    condition     = var.kube_proxy || var.cni == "none"
+    error_message = "kube_proxy can only be disabled together with cni = \"none\"; Flannel needs kube-proxy for Services."
+  }
+}
+
 variable "nodes" {
   description = "The cluster inventory, keyed by hostname: one VM per entry, however many you list. At least one `controlplane` is required; workers are optional. IPs become the nodes' static addresses and must match the DHCP reservations used for maintenance-mode boots. Omitting `proxmox_node` places the VM on var.proxmox_node, and omitting `datastore` places its disk on var.vm_datastore. `tags` adds Proxmox tags beyond the managed ones, `labels` adds Kubernetes labels to the node object."
   type = map(object({

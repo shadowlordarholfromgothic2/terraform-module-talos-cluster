@@ -25,6 +25,10 @@ data "talos_machine_configuration" "node" {
       prefix        = var.network.prefix
       gateway       = var.network.gateway
       nameservers   = var.network.nameservers
+      # Flannel and kube-proxy are Talos defaults, so the template only writes
+      # these settings when they differ, keeping existing configs unchanged.
+      cni        = var.cni
+      kube_proxy = var.kube_proxy
       # Workloads belong on workers, except in a cluster that has none: a
       # control-plane-only inventory would otherwise have nowhere to schedule.
       allow_scheduling_on_control_planes = length(local.workers) == 0
@@ -94,6 +98,10 @@ resource "talos_machine_bootstrap" "cluster" {
 
 data "talos_cluster_health" "cluster" {
   depends_on = [talos_machine_bootstrap.cluster]
+
+  # Without a CNI the nodes stay NotReady until one is installed after this
+  # apply, so only the Talos-level checks (etcd, kubelet, boot) can pass here.
+  skip_kubernetes_checks = var.cni == "none"
 
   client_configuration = talos_machine_secrets.cluster.client_configuration
   control_plane_nodes  = [for n in local.controlplanes : n.ip]
