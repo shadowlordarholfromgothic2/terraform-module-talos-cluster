@@ -236,14 +236,20 @@ variable "vm_boot_delay" {
 }
 
 variable "sizing" {
-  description = "Per-VM allocations. Memory is MiB, disk is GiB. `controlplane` and `worker` are the defaults every node of that role gets; `worker` may be omitted when the inventory holds no workers. `nodes` overrides individual fields for one named node, and any field left out there falls back to the role default."
+  description = "Per-VM allocations. Memory is MiB, disk and data_disk are GiB. `controlplane` and `worker` are the defaults every node of that role gets; `worker` may be omitted when the inventory holds no workers. `worker.data_disk` gives every worker a second disk that Talos mounts for local-path-provisioner; leaving it out keeps workers on one disk. `nodes` overrides individual fields for one named node, and any field left out there falls back to the role default; `data_disk = 0` there takes the second disk away from that one worker."
   type = object({
     controlplane = object({ cores = number, memory = number, disk = number })
-    worker       = optional(object({ cores = number, memory = number, disk = number }))
+    worker = optional(object({
+      cores     = number
+      memory    = number
+      disk      = number
+      data_disk = optional(number)
+    }))
     nodes = optional(map(object({
-      cores  = optional(number)
-      memory = optional(number)
-      disk   = optional(number)
+      cores     = optional(number)
+      memory    = optional(number)
+      disk      = optional(number)
+      data_disk = optional(number)
     })), {})
   })
   validation {
@@ -273,5 +279,21 @@ variable "sizing" {
   validation {
     condition     = alltrue([for name in keys(var.sizing.nodes) : contains(keys(var.nodes), name)])
     error_message = "Every key in sizing.nodes must name an entry in the nodes variable."
+  }
+  validation {
+    # 0 is the explicit "no data disk", so that one worker can opt out of a
+    # role default that gives every worker one.
+    condition = alltrue([
+      for d in concat([try(var.sizing.worker.data_disk, null)], [for s in values(var.sizing.nodes) : s.data_disk]) :
+      d == null ? true : d >= 0 && floor(d) == d
+    ])
+    error_message = "data_disk must be a whole number of GiB, or 0 for no data disk."
+  }
+  validation {
+    # Unknown keys are left to the check above.
+    condition = alltrue([
+      for name, s in var.sizing.nodes : s.data_disk == null || try(var.nodes[name].role, "worker") == "worker"
+    ])
+    error_message = "data_disk is a worker option; sizing.nodes may not set it for a control plane."
   }
 }

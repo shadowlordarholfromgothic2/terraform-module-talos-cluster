@@ -15,6 +15,8 @@ locals {
       cores  = coalesce(try(var.sizing.nodes[name].cores, null), var.sizing[node.role].cores)
       memory = coalesce(try(var.sizing.nodes[name].memory, null), var.sizing[node.role].memory)
       disk   = coalesce(try(var.sizing.nodes[name].disk, null), var.sizing[node.role].disk)
+      # Control planes have no data_disk default, and 0 stands for none.
+      data_disk = coalesce(try(var.sizing.nodes[name].data_disk, null), try(var.sizing[node.role].data_disk, null), 0)
     }
   }
 
@@ -104,6 +106,20 @@ resource "proxmox_virtual_environment_vm" "node" {
     discard      = "on"
     iothread     = true
     ssd          = true
+  }
+  # Second disk for local-path-provisioner. Talos finds it as the one writable
+  # disk it is not installed on, so the device name is not pinned.
+  dynamic "disk" {
+    for_each = local.vm_sizing[each.key].data_disk > 0 ? [local.vm_sizing[each.key].data_disk] : []
+    content {
+      datastore_id = coalesce(each.value.datastore, var.vm_datastore)
+      interface    = "scsi1"
+      file_format  = "raw"
+      size         = disk.value
+      discard      = "on"
+      iothread     = true
+      ssd          = true
+    }
   }
   cdrom {
     # Referenced through the download on this VM's own node, so the file is
