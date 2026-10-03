@@ -47,15 +47,15 @@ data "talos_machine_configuration" "node" {
       }
     })
     ] : [], local.vm_sizing[each.key].data_disk > 0 ? [
-    # Talos mounts the volume at /var/mnt/local-path-provisioner and propagates
-    # it into the kubelet, so hostPath volumes reach it without extraMounts.
+    # Talos mounts the volume at /var/mnt/local-path and propagates it into the
+    # kubelet, so hostPath volumes reach it without extraMounts.
     # Read-only disks such as the ISO never match, which leaves the data disk
     # as the only candidate. User volumes wait for the system volumes, so this
     # cannot claim a disk before Talos has installed onto /dev/sda.
     yamlencode({
       apiVersion = "v1alpha1"
       kind       = "UserVolumeConfig"
-      name       = "local-path-provisioner"
+      name       = "local-path"
       volumeType = "partition"
       provisioning = {
         diskSelector = {

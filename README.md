@@ -274,8 +274,7 @@ Things this module fixes rather than exposing as variables:
   attached to each VM. A worker's data disk is `scsi1`, and Talos picks it as
   the one writable disk that is not the system disk rather than by name.
 - **Data disk layout**: on the node's own datastore, one XFS partition spanning
-  the disk, the Talos user volume `local-path-provisioner` mounted at
-  `/var/mnt/local-path-provisioner`.
+  the disk, the Talos user volume `local-path` mounted at `/var/mnt/local-path`.
 - **`allowSchedulingOnControlPlanes`** is derived, not exposed: `false` whenever
   the inventory has workers, so workloads land on workers only, and `true` for a
   control-plane-only cluster, which would otherwise have nowhere to schedule.
@@ -338,21 +337,21 @@ running in it; treat it as a rebuild.
 ## Local storage with local-path-provisioner
 
 A worker with a `data_disk` gets it as a second VM disk, and Talos formats the
-disk as a user volume mounted at **`/var/mnt/local-path-provisioner`**. The volume
-is propagated into the kubelet, so hostPath volumes reach it without
+disk as a user volume mounted at **`/var/mnt/local-path`**. The volume is
+propagated into the kubelet, so hostPath volumes reach it without
 `machine.kubelet.extraMounts`, and it keeps persistent volumes off the system disk,
 where they would otherwise compete with images and logs for `EPHEMERAL`.
 
 The module does not install local-path-provisioner. Install it from the root module
 or your GitOps tooling, pointed at that path instead of the upstream default
-`/opt/local-path-provisioner`, which is read-only on Talos:
+`/opt/local-path`, which is read-only on Talos:
 
 ```json
 {
   "nodePathMap": [
     {
       "node": "DEFAULT_PATH_FOR_NON_LISTED_NODES",
-      "paths": ["/var/mnt/local-path-provisioner"]
+      "paths": ["/var/mnt/local-path"]
     }
   ]
 }
