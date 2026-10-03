@@ -15,9 +15,11 @@ cluster comes up from an empty Proxmox node with one `apply`.
 
 1. Downloads `metal-amd64.iso` for the pinned Talos release into `iso_datastore`.
 2. Creates one VM per entry in `nodes`, booting the ISO into maintenance mode.
+   Workers that size a `data_disk` get a second disk.
 3. Waits `vm_boot_delay` for maintenance mode to answer on TCP 50000.
 4. Renders a machine configuration per node (static IP, hostname, install disk,
-   control-plane VIP, optional node labels) and applies it.
+   control-plane VIP, optional node labels, the local-path volume on a data
+   disk) and applies it.
 5. Bootstraps etcd on a single control plane (`bootstrap_node`).
 6. Blocks on `talos_cluster_health` until every node is ready, then fetches the
    kubeconfig. With `cni = "none"` it waits for Talos-level health only, because
@@ -101,10 +103,13 @@ module "talos_cluster" {
 
   sizing = {
     controlplane = { cores = 2, memory = 4096, disk = 32 }
-    worker       = { cores = 4, memory = 8192, disk = 60 }
+    # Every worker gets a second, 100 GiB disk for local-path-provisioner.
+    worker = { cores = 4, memory = 8192, disk = 60, data_disk = 100 }
     nodes = {
       # A beefier storage worker, still on the default 4 cores.
-      talos-worker-01 = { memory = 16384, disk = 500 }
+      talos-worker-01 = { memory = 16384, data_disk = 500 }
+      # This one stays on a single disk.
+      talos-worker-03 = { data_disk = 0 }
     }
   }
 }
@@ -141,7 +146,7 @@ neither duplicates the other.
 | `nodes` | The cluster inventory; one VM per entry, at least one of them a control plane. See [below](#nodes). | `map(object)` | n/a |
 | `bootstrap_node` | Name of the control plane that runs the one-time etcd bootstrap. `null` selects the alphabetically first one. | `string` | `null` |
 | `vm_boot_delay` | Go duration to wait after the VMs start before the first configuration attempt, e.g. `90s`. | `string` | n/a |
-| `sizing` | Per-VM allocations. See [below](#sizing). | `object` | n/a |
+| `sizing` | Per-VM allocations, including the optional worker data disk. See [below](#sizing). | `object` | n/a |
 
 ### `nodes`
 
@@ -198,25 +203,38 @@ topology/instance-type keys are allowed.
 ```hcl
 object({
   controlplane = object({ cores = number, memory = number, disk = number })
-  worker       = optional(object({ cores = number, memory = number, disk = number }))
+  worker = optional(object({
+    cores     = number
+    memory    = number
+    disk      = number
+    data_disk = optional(number)   # second disk for local-path-provisioner
+  }))
   nodes = optional(map(object({
-    cores  = optional(number)
-    memory = optional(number)
-    disk   = optional(number)
+    cores     = optional(number)
+    memory    = optional(number)
+    disk      = optional(number)
+    data_disk = optional(number)   # workers only; 0 removes the role default
   })), {})
 })
 ```
 
-Memory is MiB, disk is GiB. `controlplane` and `worker` are the defaults for every
-node of that role; `nodes` overrides individual fields for one named node, and any
-field left out there falls back to the role default. Keys in `sizing.nodes` must
-name entries in `nodes`.
+Memory is MiB, `disk` and `data_disk` are GiB. `controlplane` and `worker` are the
+defaults for every node of that role; `nodes` overrides individual fields for one
+named node, and any field left out there falls back to the role default. Keys in
+`sizing.nodes` must name entries in `nodes`.
 
 `worker` may be omitted for a control-plane-only cluster, and is required as soon
 as `nodes` contains a worker.
 
 Minimums, for role defaults and per-node overrides alike: 2 vCPU, 4096 MiB RAM,
 32 GiB disk, all integers.
+
+`data_disk` gives a worker a second disk for
+[local-path-provisioner](#local-storage-with-local-path-provisioner). Set it on
+`worker` for every worker, or in `sizing.nodes` for one; `data_disk = 0` there
+keeps that worker on a single disk despite the role default. Leaving it out
+everywhere keeps every VM on one disk, exactly as before. It must be a whole number
+of GiB, and control planes cannot have one.
 
 ## Outputs
 
@@ -252,13 +270,17 @@ Things this module fixes rather than exposing as variables:
 - **Pod subnet `10.244.0.0/16`, service subnet `10.96.0.0/12`.** A CNI you
   install yourself must use the same pod CIDR (or take it from the node objects,
   as Cilium's `ipam.mode=kubernetes` does).
-- **Install disk `/dev/sda`** with `wipe: false`, matching the single virtio-SCSI
-  disk attached to each VM.
+- **Install disk `/dev/sda`** with `wipe: false`, matching the `scsi0` disk
+  attached to each VM. A worker's data disk is `scsi1`, and Talos picks it as
+  the one writable disk that is not the system disk rather than by name.
+- **Data disk layout**: on the node's own datastore, one XFS partition spanning
+  the disk, the Talos user volume `local-path-provisioner` mounted at
+  `/var/mnt/local-path-provisioner`.
 - **`allowSchedulingOnControlPlanes`** is derived, not exposed: `false` whenever
   the inventory has workers, so workloads land on workers only, and `true` for a
   control-plane-only cluster, which would otherwise have nowhere to schedule.
 - **SeaBIOS**, `virtio-scsi-single`, boot order `scsi0` then `ide2`, `l26` guest
-  type, host CPU type, `discard`/`iothread`/`ssd` on the disk.
+  type, host CPU type, `discard`/`iothread`/`ssd` on every disk.
 - **QEMU guest agent disabled**, because the stock Talos ISO ships without the
   agent extension.
 - **Proxmox tags** `terraform`, `talos` and the node's role are always applied,
@@ -313,6 +335,39 @@ Switching an existing cluster between `flannel` and `none` changes the machine
 configuration but does not remove the Flannel or kube-proxy resources already
 running in it; treat it as a rebuild.
 
+## Local storage with local-path-provisioner
+
+A worker with a `data_disk` gets it as a second VM disk, and Talos formats the
+disk as a user volume mounted at **`/var/mnt/local-path-provisioner`**. The volume
+is propagated into the kubelet, so hostPath volumes reach it without
+`machine.kubelet.extraMounts`, and it keeps persistent volumes off the system disk,
+where they would otherwise compete with images and logs for `EPHEMERAL`.
+
+The module does not install local-path-provisioner. Install it from the root module
+or your GitOps tooling, pointed at that path instead of the upstream default
+`/opt/local-path-provisioner`, which is read-only on Talos:
+
+```json
+{
+  "nodePathMap": [
+    {
+      "node": "DEFAULT_PATH_FOR_NON_LISTED_NODES",
+      "paths": ["/var/mnt/local-path-provisioner"]
+    }
+  ]
+}
+```
+
+That is the `config.json` key of the `local-path-config` ConfigMap, or the
+`nodePathMap` value of the Helm chart. Its helper pods mount hostPaths, so label
+their namespace (`local-path-storage` upstream) with
+`pod-security.kubernetes.io/enforce: privileged`.
+
+When only some workers have a data disk, a volume scheduled onto one of the others
+would still be created, but as a plain directory on its system disk. Give the
+data-disk workers a label through `nodes[*].labels`, and pin the workloads that
+use the storage class to it.
+
 ## Lifecycle notes
 
 - **The VIP needs the control planes.** Talos assigns `api_vip` to whichever
@@ -340,6 +395,11 @@ running in it; treat it as a rebuild.
 - **`talos_version` is not an in-place upgrade either**, and the validation
   regex pins `v1.13.x` on purpose — Talos v1.14 replaces `machine.nodeLabels`
   with a `KubeNodeConfig` document, which would break the node-labels patch.
+- **A data disk can grow, not shrink.** Raising `data_disk` resizes the Proxmox
+  disk in place, and Talos grows the partition and its filesystem into the new
+  space the next time the node boots. Proxmox cannot shrink a disk. Setting it to
+  `0`, or removing it, detaches the disk and takes every local-path volume on that
+  worker with it, so drain the worker and move its data off first.
 - **Changing node IPs is disruptive.** They are static addresses in the machine
   config *and* DHCP reservations for maintenance-mode boots; both have to move
   together.
