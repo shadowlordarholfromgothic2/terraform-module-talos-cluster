@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.0](https://github.com/shadowlordarholfromgothic2/terraform-module-talos-cluster/compare/v0.5.0...v0.6.0) (2026-10-03)
+
+
+### Features
+
+* **sizing:** add optional worker data disk for local-path-provisioner ([32c34b9](https://github.com/shadowlordarholfromgothic2/terraform-module-talos-cluster/commit/32c34b9c5dc5df5ae0fce985ea0527608c49f339))
+* worker data disk ([3b42a0a](https://github.com/shadowlordarholfromgothic2/terraform-module-talos-cluster/commit/3b42a0ac9194cac92b1d947da32a95fc46018421))
+
 ## [0.5.0](https://github.com/shadowlordarholfromgothic2/terraform-module-talos-cluster/compare/v0.4.0...v0.5.0) (2026-10-01)
 
 
