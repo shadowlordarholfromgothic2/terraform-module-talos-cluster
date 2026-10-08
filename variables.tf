@@ -132,6 +132,19 @@ variable "config_patches" {
   }
 }
 
+# The default stages any change that needs a reboot instead of applying it with
+# one, so a single apply never reboots every control plane at once and breaks
+# etcd quorum. Staged nodes pick the change up on their next reboot.
+variable "apply_mode" {
+  description = "How Talos applies machine-config changes to running nodes. `staged_if_needing_reboot` dry-runs each change and stages it when it needs a reboot, applying it live otherwise; `auto` reboots whenever a change requires it."
+  type        = string
+  default     = "staged_if_needing_reboot"
+  validation {
+    condition     = contains(["auto", "reboot", "no_reboot", "staged", "staged_if_needing_reboot"], var.apply_mode)
+    error_message = "apply_mode must be one of auto, reboot, no_reboot, staged or staged_if_needing_reboot."
+  }
+}
+
 variable "nodes" {
   description = "The cluster inventory, keyed by hostname: one VM per entry, however many you list. At least one `controlplane` is required; workers are optional. IPs become the nodes' static addresses and must match the DHCP reservations used for maintenance-mode boots. Omitting `proxmox_node` places the VM on var.proxmox_node, and omitting `datastore` places its disk on var.vm_datastore. `tags` adds Proxmox tags beyond the managed ones, `labels` adds Kubernetes labels to the node object."
   type = map(object({
