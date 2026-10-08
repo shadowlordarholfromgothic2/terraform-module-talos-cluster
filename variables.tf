@@ -114,6 +114,24 @@ variable "kube_proxy" {
   }
 }
 
+# An escape hatch for machine-config settings the module does not expose. The
+# empty default adds no patches, so existing configs render unchanged.
+variable "config_patches" {
+  description = "Extra Talos machine-config patches (YAML strings), applied after the module's own patches."
+  type = object({
+    all          = optional(list(string), [])
+    controlplane = optional(list(string), [])
+    worker       = optional(list(string), [])
+    nodes        = optional(map(list(string)), {})
+  })
+  default = {}
+
+  validation {
+    condition     = alltrue([for name in keys(var.config_patches.nodes) : contains(keys(var.nodes), name)])
+    error_message = "Keys in config_patches.nodes must name entries in nodes."
+  }
+}
+
 variable "nodes" {
   description = "The cluster inventory, keyed by hostname: one VM per entry, however many you list. At least one `controlplane` is required; workers are optional. IPs become the nodes' static addresses and must match the DHCP reservations used for maintenance-mode boots. Omitting `proxmox_node` places the VM on var.proxmox_node, and omitting `datastore` places its disk on var.vm_datastore. `tags` adds Proxmox tags beyond the managed ones, `labels` adds Kubernetes labels to the node object."
   type = map(object({

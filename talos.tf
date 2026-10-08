@@ -16,6 +16,7 @@ data "talos_machine_configuration" "node" {
   # empty map never touches machine.nodeLabels. Talos v1.14 replaces that field
   # with a KubeNodeConfig document; var.talos_version pins v1.13.x for now.
   # The user volume patch likewise only exists on nodes with a data disk.
+  # var.config_patches follows all of them.
   config_patches = concat([
     templatefile("${path.module}/templates/machine.yaml.tftpl", {
       mac           = lower(each.value.mac)
@@ -66,7 +67,13 @@ data "talos_machine_configuration" "node" {
         grow    = true
       }
     })
-  ] : [])
+    ] : [],
+    # Caller patches come last, from the broadest scope to the narrowest, so
+    # each can override the module's settings and the scopes before it.
+    var.config_patches.all,
+    var.config_patches[each.value.role],
+    lookup(var.config_patches.nodes, each.key, [])
+  )
 }
 
 # Proxmox reports a VM as started before Talos answers on TCP 50000. The wait

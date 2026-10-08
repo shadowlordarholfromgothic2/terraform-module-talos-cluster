@@ -19,7 +19,7 @@ cluster comes up from an empty Proxmox node with one `apply`.
 3. Waits `vm_boot_delay` for maintenance mode to answer on TCP 50000.
 4. Renders a machine configuration per node (static IP, hostname, install disk,
    control-plane VIP, optional node labels, the local-path volume on a data
-   disk) and applies it.
+   disk), adds any `config_patches` on top, and applies it.
 5. Bootstraps etcd on a single control plane (`bootstrap_node`).
 6. Blocks on `talos_cluster_health` until every node is ready, then fetches the
    kubeconfig. With `cni = "none"` it waits for Talos-level health only, because
@@ -124,8 +124,9 @@ $ tofu output -raw kubeconfig  > ~/.kube/config
 
 ## Inputs
 
-Only `vlan_id`, `bootstrap_node`, `cni` and `kube_proxy` have defaults; the last
-two default to what Talos does on its own. Everything else is required by design:
+Only `vlan_id`, `bootstrap_node`, `cni`, `kube_proxy` and `config_patches` have
+defaults; `cni` and `kube_proxy` default to what Talos does on its own, and
+`config_patches` to no patches at all. Everything else is required by design:
 the module owns validation, the root module owns the user-facing defaults, so
 neither duplicates the other.
 
@@ -143,6 +144,7 @@ neither duplicates the other.
 | `kubernetes_version` | Initial Kubernetes version, without the `v`. | `string` | n/a |
 | `cni` | `flannel` lets Talos deploy Flannel; `none` leaves the cluster ready for a CNI you install afterwards. | `string` | `"flannel"` |
 | `kube_proxy` | Deploy kube-proxy. `false` is only allowed with `cni = "none"`, for a CNI that replaces it. | `bool` | `true` |
+| `config_patches` | Extra Talos machine-config patches, applied after the module's own. See [below](#config_patches). | `object` | `{}` |
 | `nodes` | The cluster inventory; one VM per entry, at least one of them a control plane. See [below](#nodes). | `map(object)` | n/a |
 | `bootstrap_node` | Name of the control plane that runs the one-time etcd bootstrap. `null` selects the alphabetically first one. | `string` | `null` |
 | `vm_boot_delay` | Go duration to wait after the VMs start before the first configuration attempt, e.g. `90s`. | `string` | n/a |
@@ -236,6 +238,62 @@ keeps that worker on a single disk despite the role default. Leaving it out
 everywhere keeps every VM on one disk, exactly as before. It must be a whole number
 of GiB, and control planes cannot have one.
 
+### `config_patches`
+
+```hcl
+object({
+  all          = optional(list(string), [])        # every node
+  controlplane = optional(list(string), [])        # control planes only
+  worker       = optional(list(string), [])        # workers only
+  nodes        = optional(map(list(string)), {})   # one named node
+})
+```
+
+An escape hatch for machine-config settings this module does not expose. Each
+string is a Talos config patch in YAML: a strategic merge patch, a JSON 6902 patch
+or a standalone config document such as a `UserVolumeConfig`. They are applied after the
+module's own patches, from the broadest scope to the narrowest: `all`, then the
+node's role, then its entry in `nodes`. A later patch overrides an earlier one, and
+any of them can override what the module sets. Keys in `config_patches.nodes` must
+name entries in `nodes`.
+
+For example, kube-prometheus-stack scrapes the controller manager, the scheduler
+and etcd, which Talos binds to localhost by default:
+
+```hcl
+module "talos_cluster" {
+  # ...
+  config_patches = {
+    controlplane = [
+      <<-YAML
+      cluster:
+        controllerManager:
+          extraArgs:
+            bind-address: 0.0.0.0
+        scheduler:
+          extraArgs:
+            bind-address: 0.0.0.0
+        etcd:
+          extraArgs:
+            listen-metrics-urls: http://0.0.0.0:2381
+        proxy:                      # only with kube_proxy = true
+          extraArgs:
+            metrics-bind-address: 0.0.0.0:10249
+      YAML
+    ]
+  }
+}
+```
+
+This makes those endpoints reachable from the node network. The controller
+manager and the scheduler still require authentication, but etcd's metrics URL is
+plain, unauthenticated HTTP.
+
+The module does not validate the patches. Talos rejects a malformed one when it
+renders the configuration (at `plan` on an existing cluster, at `apply` on a new
+one), but a valid patch can still set something that conflicts with the module,
+such as a different install disk or interface address.
+
 ## Outputs
 
 | Name | Description | Sensitive |
@@ -265,7 +323,9 @@ state and restricts access.
 
 ## Baked-in decisions
 
-Things this module fixes rather than exposing as variables:
+Things this module fixes rather than exposing as variables. Those that live in
+the machine configuration can still be overridden through
+[`config_patches`](#config_patches); the VM settings cannot.
 
 - **Pod subnet `10.244.0.0/16`, service subnet `10.96.0.0/12`.** A CNI you
   install yourself must use the same pod CIDR (or take it from the node objects,
@@ -399,6 +459,10 @@ use the storage class to it.
   space the next time the node boots. Proxmox cannot shrink a disk. Setting it to
   `0`, or removing it, detaches the disk and takes every local-path volume on that
   worker with it, so drain the worker and move its data off first.
+- **Patches are declarative.** Every change to `config_patches` re-renders and
+  re-applies the affected nodes' full configuration, so removing a patch also
+  removes its setting. Apply mode is `auto`: Talos applies most changes live and
+  reboots a node only when the change requires it.
 - **Changing node IPs is disruptive.** They are static addresses in the machine
   config *and* DHCP reservations for maintenance-mode boots; both have to move
   together.
