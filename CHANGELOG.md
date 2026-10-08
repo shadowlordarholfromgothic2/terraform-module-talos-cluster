@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.7.0](https://github.com/shadowlordarholfromgothic2/terraform-module-talos-cluster/compare/v0.6.0...v0.7.0) (2026-10-08)
+
+
+### Features
+
+* **talos:** add config_patches input for extra machine-config patches ([9fab305](https://github.com/shadowlordarholfromgothic2/terraform-module-talos-cluster/commit/9fab305d303aee25d4ae466360815258f7919e61))
+* **talos:** add config_patches input for extra machine-config patches ([5ed5312](https://github.com/shadowlordarholfromgothic2/terraform-module-talos-cluster/commit/5ed5312b0de711edf03f9cb7eb938d32804882e7))
+
 ## [0.6.0](https://github.com/shadowlordarholfromgothic2/terraform-module-talos-cluster/compare/v0.5.0...v0.6.0) (2026-10-03)
 
 
