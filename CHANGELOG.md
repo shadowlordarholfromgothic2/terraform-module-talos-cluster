@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.8.0](https://github.com/shadowlordarholfromgothic2/terraform-module-talos-cluster/compare/v0.7.0...v0.8.0) (2026-10-08)
+
+
+### Features
+
+* **talos:** make apply_mode configurable, default to staged_if_needing_reboot ([94a4cd0](https://github.com/shadowlordarholfromgothic2/terraform-module-talos-cluster/commit/94a4cd0721284ef46fb3652da0f30ec62d4697c6))
+* **talos:** make apply_mode configurable, default to staged_if_needing_reboot ([bc66098](https://github.com/shadowlordarholfromgothic2/terraform-module-talos-cluster/commit/bc660989db5080803eae781717c03a0dea783f0a))
+
 ## [0.7.0](https://github.com/shadowlordarholfromgothic2/terraform-module-talos-cluster/compare/v0.6.0...v0.7.0) (2026-10-08)
 
 
