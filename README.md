@@ -124,9 +124,10 @@ $ tofu output -raw kubeconfig  > ~/.kube/config
 
 ## Inputs
 
-Only `vlan_id`, `bootstrap_node`, `cni`, `kube_proxy` and `config_patches` have
-defaults; `cni` and `kube_proxy` default to what Talos does on its own, and
-`config_patches` to no patches at all. Everything else is required by design:
+Only `vlan_id`, `bootstrap_node`, `cni`, `kube_proxy`, `config_patches` and
+`apply_mode` have defaults; `cni` and `kube_proxy` default to what Talos does on
+its own, `config_patches` to no patches at all, and `apply_mode` to never
+rebooting a running node. Everything else is required by design:
 the module owns validation, the root module owns the user-facing defaults, so
 neither duplicates the other.
 
@@ -145,6 +146,7 @@ neither duplicates the other.
 | `cni` | `flannel` lets Talos deploy Flannel; `none` leaves the cluster ready for a CNI you install afterwards. | `string` | `"flannel"` |
 | `kube_proxy` | Deploy kube-proxy. `false` is only allowed with `cni = "none"`, for a CNI that replaces it. | `bool` | `true` |
 | `config_patches` | Extra Talos machine-config patches, applied after the module's own. See [below](#config_patches). | `object` | `{}` |
+| `apply_mode` | How config changes reach running nodes: `staged_if_needing_reboot`, `auto`, `reboot`, `no_reboot` or `staged`. See [Lifecycle notes](#lifecycle-notes). | `string` | `"staged_if_needing_reboot"` |
 | `nodes` | The cluster inventory; one VM per entry, at least one of them a control plane. See [below](#nodes). | `map(object)` | n/a |
 | `bootstrap_node` | Name of the control plane that runs the one-time etcd bootstrap. `null` selects the alphabetically first one. | `string` | `null` |
 | `vm_boot_delay` | Go duration to wait after the VMs start before the first configuration attempt, e.g. `90s`. | `string` | n/a |
@@ -461,8 +463,15 @@ use the storage class to it.
   worker with it, so drain the worker and move its data off first.
 - **Patches are declarative.** Every change to `config_patches` re-renders and
   re-applies the affected nodes' full configuration, so removing a patch also
-  removes its setting. Apply mode is `auto`: Talos applies most changes live and
-  reboots a node only when the change requires it.
+  removes its setting.
+- **Changes that need a reboot are staged.** `apply_mode` defaults to
+  `staged_if_needing_reboot`: the provider dry-runs each node's new config at
+  `plan` and applies it live when it can, but stages it when it needs a reboot,
+  so one apply never reboots every control plane at once. The plan warns about
+  each staged node; reboot them yourself one at a time, waiting for each to
+  rejoin, with `talosctl reboot --nodes <ip>`. A node the dry-run cannot reach,
+  such as a new one still in maintenance mode, falls back to `auto`. Set
+  `apply_mode = "auto"` to let Talos reboot nodes as needed instead.
 - **Changing node IPs is disruptive.** They are static addresses in the machine
   config *and* DHCP reservations for maintenance-mode boots; both have to move
   together.

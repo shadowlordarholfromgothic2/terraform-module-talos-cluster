@@ -95,7 +95,7 @@ resource "talos_machine_configuration_apply" "node" {
   endpoint                    = each.value.ip
   client_configuration        = talos_machine_secrets.cluster.client_configuration
   machine_configuration_input = data.talos_machine_configuration.node[each.key].machine_configuration
-  apply_mode                  = "auto"
+  apply_mode                  = var.apply_mode
 
   timeouts = {
     create = "20m"
